@@ -17,7 +17,8 @@ local SLIDERS = {
     props = { "character_running_speed_modifier" } },
   { key = "mining",    min = 0, max = 100,   step = 1,   kind = "mult",
     props = { "character_mining_speed_modifier" } },
-  { key = "reach",     min = 0, max = 500,   step = 5,   kind = "plus",
+  -- the engine caps distance bonuses at 320
+  { key = "reach",     min = 0, max = 320,   step = 5,   kind = "plus",
     props = {
       "character_build_distance_bonus",
       "character_reach_distance_bonus",
@@ -50,14 +51,16 @@ local function strip_prefix(name, prefix)
 end
 
 local function get_data(player_index)
-  global.players = global.players or {}
-  local d = global.players[player_index]
+  storage.players = storage.players or {}
+  local d = storage.players[player_index]
   if not d then
     d = { god = false, god_applied = false }
-    global.players[player_index] = d
+    storage.players[player_index] = d
   end
   for _, s in pairs(SLIDERS) do
     if d[s.key] == nil then d[s.key] = 0 end
+    -- clamp values saved by older versions of the mod
+    d[s.key] = math.max(s.min, math.min(s.max, d[s.key]))
   end
   return d
 end
@@ -86,7 +89,8 @@ local function apply(player)
 
   for _, s in pairs(SLIDERS) do
     for _, prop in pairs(s.props) do
-      player[prop] = data[s.key]
+      -- pcall: the engine rejects out-of-range values with an error
+      pcall(function() player[prop] = data[s.key] end)
     end
   end
 
@@ -192,7 +196,7 @@ local function build_window(player)
     type = "sprite-button",
     name = CLOSE_BUTTON,
     style = "frame_action_button",
-    sprite = "utility/close_white",
+    sprite = "utility/close", -- 2.x: "close_white" was removed, "close" is the white icon
     hovered_sprite = "utility/close_black",
     clicked_sprite = "utility/close_black",
     tooltip = { "cheat-menu.close" },
@@ -222,7 +226,6 @@ local function build_window(player)
       maximum_value = s.max,
       value = data[s.key],
       value_step = s.step,
-      discrete_slider = true,
     }
     slider.style.width = 200
     local value_label = row.add {
@@ -284,7 +287,12 @@ local action_handlers = {}
 function action_handlers.heal(player, data)
   local char = player.character
   if char and char.valid then
-    char.health = char.prototype.max_health + player.character_health_bonus
+    -- 2.x: LuaEntity.max_health already accounts for the character health bonus and quality
+    local ok = pcall(function() char.health = char.max_health end)
+    if not ok then
+      -- fallback: the engine clamps health to the maximum
+      pcall(function() char.health = 1000000 end)
+    end
     player.print({ "cheat-menu.msg-healed" })
   end
 end
@@ -341,12 +349,12 @@ end
 ---------------------------------------------------------------------------
 
 script.on_init(function()
-  global.players = {}
+  storage.players = {}
   setup_all_players()
 end)
 
 script.on_configuration_changed(function()
-  global.players = global.players or {}
+  storage.players = storage.players or {}
   for _, player in pairs(game.players) do
     local frame = player.gui.screen[FRAME]
     if frame then frame.destroy() end
@@ -371,7 +379,7 @@ script.on_event({
 end)
 
 script.on_event(defines.events.on_player_removed, function(event)
-  if global.players then global.players[event.player_index] = nil end
+  if storage.players then storage.players[event.player_index] = nil end
 end)
 
 script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
@@ -433,8 +441,13 @@ script.on_event(defines.events.on_gui_value_changed, function(event)
   local player = game.get_player(event.player_index)
   if not can_use(player) then return end
 
+  -- snap to the step ourselves so we do not depend on slider flags that differ between versions
+  local value = math.floor(element.slider_value / s.step + 0.5) * s.step
+  value = math.max(s.min, math.min(s.max, value))
+  if value ~= element.slider_value then element.slider_value = value end
+
   local data = get_data(player.index)
-  data[key] = element.slider_value
+  data[key] = value
   local value_label = element.parent[VALUE_PREFIX .. key]
   if value_label then value_label.caption = format_value(s, data[key]) end
   apply(player)

@@ -2,8 +2,8 @@
   "name": "cheat_menu",
   "version": "0.1.0",
   "title": "Cheat Menu",
-  "author": "Raevskiiy",
+  "author": "you",
   "description": "Simple cheat menu: crafting/running/mining speed, reach, health, god mode, research and more. Integrates with GUI Unifier button styles.",
-  "factorio_version": "1.1",
-  "dependencies": ["base >= 1.1", "? GUI_Unifyer"]
+  "factorio_version": "2.1",
+  "dependencies": ["base >= 2.1.0", "? GUI_Unifyer"]
 }
